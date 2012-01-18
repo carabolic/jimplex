@@ -3,10 +3,16 @@ package de.tu_berlin.coga.jimplex;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.text.ParseException;
+import java.util.Arrays;
 
 import org.ejml.data.DenseMatrix64F;
 import org.ejml.data.RowD1Matrix64F;
 import org.ejml.ops.CommonOps;
+
+import de.tu_berlin.coga.jimplex.LinearProgram;
+import de.tu_berlin.coga.jimplex.LinearProgram.ObjectiveGoal;
+import de.tu_berlin.coga.jimplex.exceptions.InfeasibleLPException;
+import de.tu_berlin.coga.jimplex.exceptions.UnboundedLPException;
 
 public class RevisedSimplex {
 	private LinearProgram program;
@@ -16,11 +22,13 @@ public class RevisedSimplex {
 		// TODO: Check that it is normalized
 	}
 
-	public int[] solve() {
+	public int[] solve() throws InfeasibleLPException, UnboundedLPException {
 		int numVariables = program.numVariables;
 		int numConstraints = program.constraints.length;
 		double[][] oldConstraints = program.constraints;
 		double[] oldCosts = program.obj;
+		double[] oldLBounds = program.lowerBound;
+		double[] oldUBounds = program.upperBound;
 
 		double[][] newConstraints = new double[numConstraints][numVariables + numConstraints];
 
@@ -40,31 +48,45 @@ public class RevisedSimplex {
 		for (int i = 0; i < numConstraints; i++) {
 			newCosts[i] = 1;
 		}
+		
+		double[] newLBounds = new double[numVariables + numConstraints];
+		double[] newUBounds = new double[numVariables + numConstraints];
+		for (int i = 0; i < numConstraints; i++) {
+			newUBounds[i]	= Double.POSITIVE_INFINITY;
+		}
+		System.arraycopy(oldLBounds, 0, newLBounds, numConstraints, numVariables);
+		System.arraycopy(oldUBounds, 0, newUBounds, numConstraints, numVariables);
 
 		// Find base solution
 		program.constraints = newConstraints;
 		program.obj = newCosts;
 		program.numVariables = numVariables + numConstraints;
+		program.lowerBound = newLBounds;
+		program.upperBound = newUBounds;
 		int[] B = new int[numConstraints];
 		for (int i = 0; i < B.length; i++) {
 			B[i] = i;
 		}
 		B = solve(B);
+		/*if (!isFeasible(B)) {
+			throw new InfeasibleLPException();
+		}*/
 
 		// Optimize original program using that solution
 		program.constraints = oldConstraints;
 		program.obj = oldCosts;
 		program.numVariables = numVariables;
+		program.lowerBound = oldLBounds;
+		program.upperBound = oldUBounds;
 		for (int i = 0; i < B.length; i++) {
 			B[i] = B[i] - numConstraints;
 		}
-		// int[] B = new int[] {2,3};
 		B = solve(B);
 
 		return B;
 	}
 
-	public int[] solve(int[] B) {
+	public int[] solve(int[] B) throws UnboundedLPException {
 		double[][] A = program.constraints;
 		double[] c = program.obj;
 		DenseMatrix64F b = convertColumnVector(program.rightHandSide);
@@ -74,6 +96,7 @@ public class RevisedSimplex {
 		int numNonBaseColumns = numVariables - rank;
 
 		while (true) {
+			double[] variables = new double[program.numVariables];
 			DenseMatrix64F A_Binv = createInvBase(A, B);
 			DenseMatrix64F b_tilde = new DenseMatrix64F(rank, 1);
 			CommonOps.mult(A_Binv, b, b_tilde);
@@ -105,10 +128,23 @@ public class RevisedSimplex {
 				}
 			}
 			if (allPositive) {
-				System.out.println("best");
-
-				System.out.println(B[0] + ", " + B[1]);
-				System.out.println(b_tilde);
+				// Optimal solution
+				StringBuilder strBld = new StringBuilder();
+				
+				for (int i = 0; i < B.length; i++) {
+					double var = b_tilde.get(i);
+					if (var <= 0.0) {
+						var = 0;
+					}
+					variables[B[i]] = var;
+					//strBld.append(program.varName[B[i]]);
+					//strBld.append(": ");
+					strBld.append(var);
+					strBld.append("\n");
+				}				
+				program.variables = variables;
+				System.out.println(strBld.toString());
+				
 				return B;
 			}
 
@@ -144,8 +180,7 @@ public class RevisedSimplex {
 
 			// Check if problem is unbound
 			if (min_value == Double.POSITIVE_INFINITY) {
-				System.out.println("Unbound problem");
-				System.exit(1);
+				throw new UnboundedLPException();
 			}
 
 			int k = B[min_index];
@@ -156,9 +191,24 @@ public class RevisedSimplex {
 					break;
 				}
 			}
-			System.out.println(B[0] + ", " + B[1]);
-			System.out.println(b_tilde);
+			//System.out.println(B[0] + ", " + B[1]);
+			//System.out.println(b_tilde);
 		}
+	}
+	
+	private boolean isFeasible(int[] B) {
+		boolean feasible = true;
+		for (int i : B) {
+			double var = program.variables[i];
+			if (Double.isInfinite(var) || Double.isNaN(var)) {
+				continue;
+			}
+			if (!(var >= program.lowerBound[i] && var <= program.upperBound[i])) {
+				feasible = false;
+				break;
+			}
+		}
+		return feasible;
 	}
 
 	private double[] getColumn(double[][] A, int columnIndex) {
@@ -230,12 +280,25 @@ public class RevisedSimplex {
 		return matrix;
 	}
 
-	public static void main(String[] args) throws FileNotFoundException, ParseException, IOException {		
+	public static void main(String[] args) throws FileNotFoundException, ParseException, IOException, InfeasibleLPException, UnboundedLPException {		
 		String filePath = args[0];
 		LinearProgram program = new LinearProgram(filePath);
+		boolean isMax = (program.objGoal == ObjectiveGoal.MAX) ? true : false;
 		program.normalize();
+		boolean isConverted = isMax && (program.objGoal == ObjectiveGoal.MIN);
 
 		RevisedSimplex solver = new RevisedSimplex(program);
 		int[] opt = solver.solve();
+		Arrays.sort(opt);
+		
+		double value = program.getObjectiveValue(opt);
+		if (isConverted) {
+			value *= -1;
+		}
+		System.out.println("Objective: " + value);
+		
+		for(int i : opt) {
+			System.out.println(program.varName[i] + ": " + program.variables[i]);
+		}
 	}
 }
