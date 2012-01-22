@@ -294,6 +294,7 @@ public class RevisedSimplex {
 		LinearProgram program = new LinearProgram(filePath);
 		boolean isMax = (program.objGoal == ObjectiveGoal.MAX) ? true : false;
 		program.normalize();
+		System.out.println(program);
 		boolean isConverted = isMax && (program.objGoal == ObjectiveGoal.MIN);
 
 		RevisedSimplex solver = new RevisedSimplex(program);
