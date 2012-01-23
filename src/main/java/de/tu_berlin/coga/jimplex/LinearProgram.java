@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import com.google.common.base.Preconditions;
+
 import de.tu_berlin.coga.jimplex.LPReader;
 
 public class LinearProgram {
@@ -139,17 +141,29 @@ public class LinearProgram {
 				// Transform unrestricted / free variables
 				// substitute x = x' - x''; x', x'' >= 0
 				if (Double.isInfinite(lb) && Double.isInfinite(ub)) {
-					this.addVariable(i, new String[]{"xS1", "xS2"}, 0);
+					this.transformFreeVariable(i);
 				}
-				// Transform lower bounds other than zero
-				else if (!Double.isInfinite(lb)) {
+				// Transform bounds of the form lb <= x <= ub
+				// where lb < 0 and ub == 0
+				else if (lb < 0 && ub == 0) {
 					
 				}
-				else if (!Double.isInfinite(ub)) {
-					
+				// Transform bounds where lb == 0 and ub > 0
+				else if (lb == 0 && ub > 0) {
+					double[] coef = new double[numVariables];
+					coef[i] = 1;
+					this.addConstraint(coef, Sense.LEQ, ub);
+					lowerBound[i]	= 0;
+					upperBound[i]	= Double.POSITIVE_INFINITY;
 				}
-				else if (!Double.isInfinite(lb) && !Double.isInfinite(ub)) {
-					
+				// Transform bounds where lb > 0 and ub > 0 and ub != +inf
+				else if (lb > 0 && ub > 0 && !Double.isInfinite(ub)) {
+					double[] coef = new double[numVariables];
+					coef[i] = 1;
+					this.addConstraint(coef, Sense.GEQ, lb);
+					this.addConstraint(coef, Sense.LEQ, ub);	
+					lowerBound[i]	= 0;
+					upperBound[i]	= Double.POSITIVE_INFINITY;
 				}
 				else {
 					throw new RuntimeException();
@@ -203,11 +217,13 @@ public class LinearProgram {
 			int constNum = slackMapping.getValue();
 			if (senses[constNum] == Sense.LEQ) {
 				varName[numVariables + slackNum] = "s" + (constNum + 1);
+				constraints[constNum][numVariables + slackNum] = 1.0;
 			} 
 			else {
 				varName[numVariables + slackNum] = "e" + (constNum + 1);
-			}
-			constraints[constNum][numVariables + slackNum] = 1.0;
+				constraints[constNum][numVariables + slackNum] = -1.0;
+			}			
+			
 			lowerBound[numVariables + slackNum] = 0;
 			upperBound[numVariables + slackNum] = Double.POSITIVE_INFINITY;
 			senses[constNum] = Sense.EQ;
@@ -216,7 +232,48 @@ public class LinearProgram {
 		numVariables = numVarsTotal;
 	}
 	
-	private void addVariable(int varIndex, String[] varNames, double constant) {
+	/**
+	 * Adds constraint for already existing variables to the linear program.
+	 * @param coefficients
+	 * Coefficients for the constraint matrix
+	 * @param sense
+	 * @param rhs
+	 * Non negative right hand side.
+	 */
+	private void addConstraint(double[] coefficients, Sense sense, double rhs) {
+		Preconditions.checkArgument(rhs >= 0);
+		Preconditions.checkArgument(coefficients.length == numVariables);
+		
+		// Add new coefficients
+		double[][] newConstraints = new double[constraints.length + 1][numVariables];
+		for (int i = 0; i < constraints.length; i++) {
+			System.arraycopy(constraints[i], 0, newConstraints[i], 0, numVariables);
+		}
+		System.arraycopy(coefficients, 0, newConstraints[constraints.length], 0, numVariables);
+		
+		// Add new sense
+		Sense[] newSenses = new Sense[senses.length + 1];
+		System.arraycopy(senses, 0, newSenses, 0, senses.length);
+		newSenses[senses.length] = sense;
+		
+		// Add new rhs
+		double[] newRhs = new double[rightHandSide.length + 1];
+		System.arraycopy(rightHandSide, 0, newRhs, 0, rightHandSide.length);
+		newRhs[rightHandSide.length] = rhs;
+		
+		// Add new constraint name
+		String cName = "C" + constraints.length;
+		String[] newConstraintNames = new String[constraintNames.length + 1];
+		System.arraycopy(constraintNames, 0, newConstraintNames, 0, constraintNames.length);
+		newConstraintNames[constraintNames.length] = cName;
+		
+		constraints = newConstraints;
+		senses = newSenses;
+		rightHandSide = newRhs;
+		constraintNames = newConstraintNames;
+	}
+	
+	private void transformFreeVariable(int varIndex) {
 		int newNumVars = numVariables + 1;
 		double[] oldObj = obj;
 		double[] newObj = new double[newNumVars];
@@ -240,7 +297,7 @@ public class LinearProgram {
 		newVarNames[varIndex + 1] = oldVarNames[varIndex] + "''";
 		System.arraycopy(oldVarNames, varIndex + 1, newVarNames, varIndex + 2, newNumVars - varIndex - 2);
 
-		// TODO copy lower and upper bounds
+		// copy lower and upper bounds
 		System.arraycopy(oldLowerBounds, 0, newLowerBounds, 0, varIndex);
 		System.arraycopy(oldUpperBounds, 0, newUpperBounds, 0, varIndex);
 		newLowerBounds[varIndex] = 0;

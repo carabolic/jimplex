@@ -207,15 +207,11 @@ public class RevisedSimplex {
 	private boolean isFeasible(int[] B) {
 		boolean feasible = true;
 		for (int i : B) {
-			double var = program.variables[i];
-			if (Double.isInfinite(var) || Double.isNaN(var)) {
-				continue;
-			}
-			if (!(var >= program.lowerBound[i] && var <= program.upperBound[i])) {
-				feasible = false;
-				break;
+			if (i < B.length) {
+				return false;
 			}
 		}
+
 		return feasible;
 	}
 
