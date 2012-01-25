@@ -68,9 +68,10 @@ public class RevisedSimplex {
 			B[i] = i;
 		}
 		B = solve(B);
-		
-		if (!isFeasible(B)) { throw new InfeasibleLPException(); }
-		
+
+		if (!isFeasible(B)) {
+			throw new InfeasibleLPException();
+		}
 
 		// Optimize original program using that solution
 		program.constraints = oldConstraints;
@@ -95,7 +96,10 @@ public class RevisedSimplex {
 		int numVariables = program.numVariables;
 		int numNonBaseColumns = numVariables - rank;
 
+		int iterCount = 0;
+
 		while (true) {
+			System.out.println("Iteration: " + ++iterCount);
 			double[] variables = new double[program.numVariables];
 			DenseMatrix64F A_Binv = createInvBase(A, B);
 			DenseMatrix64F b_tilde = new DenseMatrix64F(rank, 1);
@@ -156,6 +160,7 @@ public class RevisedSimplex {
 			//     break;
 			//    }
 			//   }
+			// Choose column with minimal cost
 			int index = -1;
 			double min = Double.POSITIVE_INFINITY;
 			for (int i = 0; i < c_tilde.length; i++) {

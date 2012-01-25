@@ -88,21 +88,23 @@ public class LinearProgram {
 	public int getNumSlackVariables() {
 		return this.numSlackVariables;
 	}
-	
+
 	public double getObjectiveValue(int[] B) {
-		double value = 0;		
+		double value = 0;
 		for (int i : B) {
 			value += (obj[i] * variables[i]);
-		}		
+		}
 		return value;
 	}
 
 	/**
-	 * Transforms the linear program in general form to a minimizing linear program in standard form.
+	 * Transforms the linear program in general form to a minimizing linear
+	 * program in standard form.
 	 * <ul>
 	 * <li>All variables are transformed to be non-negative restricted</li>
 	 * <li>All inequality constraints are transformed to equality constraints</li>
-	 * <li>All constants on the ride hand side are transformed to non-negative constants</li>
+	 * <li>All constants on the ride hand side are transformed to non-negative
+	 * constants</li>
 	 * </ul>
 	 */
 	public void normalize() {
@@ -113,27 +115,9 @@ public class LinearProgram {
 				obj[i] = -1 * obj[i];
 			}
 		}
-		
-		// transform constraints were the constant rhs is less than 0
-		for (int i = 0; i < rightHandSide.length; i++) {
-			double rhs = rightHandSide[i];
-			if (rhs < 0) {
-				rightHandSide[i] = -1 * rhs;
-				for (int k = 0; k < constraints[i].length; k++) {
-					constraints[i][k] *= -1;
-				}
-				if (senses[i] != Sense.EQ) {
-					if (senses[i] == Sense.LEQ) {
-						senses[i] = Sense.GEQ;
-					}
-					else {
-						senses[i] = Sense.LEQ;
-					}
-				}
-			}
-		}
-		
-		// Transform restricted ( != non-negative) and free variables to constraints and non-negative variables
+
+		// Transform restricted ( != non-negative) and free variables to constraints
+		// and non-negative variables
 		for (int i = 0; i < lowerBound.length; i++) {
 			double lb = lowerBound[i];
 			double ub = upperBound[i];
@@ -146,27 +130,46 @@ public class LinearProgram {
 				// Transform bounds of the form lb <= x <= ub
 				// where lb < 0 and ub == 0
 				else if (lb < 0 && ub == 0) {
-					
+					this.substitueLowerBoundedVariable(i, lb);
+					lowerBound[i] = 0;
+					upperBound[i] = Double.POSITIVE_INFINITY;
 				}
 				// Transform bounds where lb == 0 and ub > 0
 				else if (lb == 0 && ub > 0) {
 					double[] coef = new double[numVariables];
 					coef[i] = 1;
 					this.addConstraint(coef, Sense.LEQ, ub);
-					lowerBound[i]	= 0;
-					upperBound[i]	= Double.POSITIVE_INFINITY;
+					lowerBound[i] = 0;
+					upperBound[i] = Double.POSITIVE_INFINITY;
 				}
 				// Transform bounds where lb > 0 and ub > 0 and ub != +inf
 				else if (lb > 0 && ub > 0 && !Double.isInfinite(ub)) {
 					double[] coef = new double[numVariables];
 					coef[i] = 1;
 					this.addConstraint(coef, Sense.GEQ, lb);
-					this.addConstraint(coef, Sense.LEQ, ub);	
-					lowerBound[i]	= 0;
-					upperBound[i]	= Double.POSITIVE_INFINITY;
-				}
-				else {
+					this.addConstraint(coef, Sense.LEQ, ub);
+					lowerBound[i] = 0;
+					upperBound[i] = Double.POSITIVE_INFINITY;
+				} else {
 					throw new RuntimeException();
+				}
+			}
+		}
+
+		// transform constraints were the constant rhs is less than 0
+		for (int i = 0; i < rightHandSide.length; i++) {
+			double rhs = rightHandSide[i];
+			if (rhs < 0) {
+				rightHandSide[i] = -1 * rhs;
+				for (int k = 0; k < constraints[i].length; k++) {
+					constraints[i][k] *= -1;
+				}
+				if (senses[i] != Sense.EQ) {
+					if (senses[i] == Sense.LEQ) {
+						senses[i] = Sense.GEQ;
+					} else {
+						senses[i] = Sense.LEQ;
+					}
 				}
 			}
 		}
@@ -218,12 +221,11 @@ public class LinearProgram {
 			if (senses[constNum] == Sense.LEQ) {
 				varName[numVariables + slackNum] = "s" + (constNum + 1);
 				constraints[constNum][numVariables + slackNum] = 1.0;
-			} 
-			else {
+			} else {
 				varName[numVariables + slackNum] = "e" + (constNum + 1);
 				constraints[constNum][numVariables + slackNum] = -1.0;
-			}			
-			
+			}
+
 			lowerBound[numVariables + slackNum] = 0;
 			upperBound[numVariables + slackNum] = Double.POSITIVE_INFINITY;
 			senses[constNum] = Sense.EQ;
@@ -231,48 +233,57 @@ public class LinearProgram {
 
 		numVariables = numVarsTotal;
 	}
-	
+
 	/**
 	 * Adds constraint for already existing variables to the linear program.
+	 * 
 	 * @param coefficients
-	 * Coefficients for the constraint matrix
+	 *          Coefficients for the constraint matrix
 	 * @param sense
 	 * @param rhs
-	 * Non negative right hand side.
+	 *          Non negative right hand side.
 	 */
 	private void addConstraint(double[] coefficients, Sense sense, double rhs) {
 		Preconditions.checkArgument(rhs >= 0);
 		Preconditions.checkArgument(coefficients.length == numVariables);
-		
+
 		// Add new coefficients
 		double[][] newConstraints = new double[constraints.length + 1][numVariables];
 		for (int i = 0; i < constraints.length; i++) {
 			System.arraycopy(constraints[i], 0, newConstraints[i], 0, numVariables);
 		}
 		System.arraycopy(coefficients, 0, newConstraints[constraints.length], 0, numVariables);
-		
+
 		// Add new sense
 		Sense[] newSenses = new Sense[senses.length + 1];
 		System.arraycopy(senses, 0, newSenses, 0, senses.length);
 		newSenses[senses.length] = sense;
-		
+
 		// Add new rhs
 		double[] newRhs = new double[rightHandSide.length + 1];
 		System.arraycopy(rightHandSide, 0, newRhs, 0, rightHandSide.length);
 		newRhs[rightHandSide.length] = rhs;
-		
+
 		// Add new constraint name
 		String cName = "C" + constraints.length;
 		String[] newConstraintNames = new String[constraintNames.length + 1];
 		System.arraycopy(constraintNames, 0, newConstraintNames, 0, constraintNames.length);
 		newConstraintNames[constraintNames.length] = cName;
-		
+
 		constraints = newConstraints;
 		senses = newSenses;
 		rightHandSide = newRhs;
 		constraintNames = newConstraintNames;
 	}
-	
+
+	private void substitueLowerBoundedVariable(int varIndex, double lowerBound) {
+		varName[varIndex] = varName[varIndex] + "'";
+		// rightHandSide[varIndex] -= lowerBound;
+		for (int c = 0; c < constraints.length; c++) {
+			rightHandSide[c] = rightHandSide[c] - (constraints[c][varIndex] * lowerBound);
+		}
+	}
+
 	private void transformFreeVariable(int varIndex) {
 		int newNumVars = numVariables + 1;
 		double[] oldObj = obj;
@@ -285,13 +296,13 @@ public class LinearProgram {
 		double[] newUpperBounds = new double[newNumVars];
 		String[] oldVarNames = varName;
 		String[] newVarNames = new String[newNumVars];
-		
+
 		double objCoef = oldObj[varIndex];
 		System.arraycopy(oldObj, 0, newObj, 0, varIndex);
 		newObj[varIndex] = objCoef;
 		newObj[varIndex + 1] = objCoef;
 		System.arraycopy(oldObj, varIndex + 1, newObj, varIndex + 2, newNumVars - varIndex - 2);
-		
+
 		System.arraycopy(oldVarNames, 0, newVarNames, 0, varIndex);
 		newVarNames[varIndex] = oldVarNames[varIndex] + "'";
 		newVarNames[varIndex + 1] = oldVarNames[varIndex] + "''";
@@ -306,15 +317,15 @@ public class LinearProgram {
 		newUpperBounds[varIndex + 1] = Double.POSITIVE_INFINITY;
 		System.arraycopy(oldLowerBounds, varIndex + 1, newLowerBounds, varIndex + 2, newNumVars - varIndex - 2);
 		System.arraycopy(oldUpperBounds, varIndex + 1, newUpperBounds, varIndex + 2, newNumVars - varIndex - 2);
-		
+
 		for (int c = 0; c < oldCons.length; c++) {
 			double coef = oldCons[c][varIndex];
 			System.arraycopy(oldCons[c], 0, newCons[c], 0, varIndex);
 			newCons[c][varIndex] = coef;
 			newCons[c][varIndex + 1] = -1 * coef;
 			System.arraycopy(oldCons[c], varIndex + 1, newCons[c], varIndex + 2, newNumVars - varIndex - 2);
-		}		
-		
+		}
+
 		constraints = newCons;
 		varName = newVarNames;
 		numVariables = newNumVars;
@@ -324,7 +335,7 @@ public class LinearProgram {
 		upperBound = newUpperBounds;
 		obj = newObj;
 	}
-	
+
 	@Override
 	public String toString() {
 		StringBuilder strBuilder = new StringBuilder();
@@ -337,14 +348,13 @@ public class LinearProgram {
 				strBuilder.append("*");
 				strBuilder.append(varName[i]);
 				strBuilder.append('\t');
-			}
-			else {
+			} else {
 				strBuilder.append('\t');
 			}
 		}
 		strBuilder.append("\n\n");
 		strBuilder.append("subject to:\n");
-		
+
 		for (int c = 0; c < constraints.length; c++) {
 			strBuilder.append(constraintNames[c]);
 			strBuilder.append(":\t");
@@ -354,8 +364,7 @@ public class LinearProgram {
 					strBuilder.append('*');
 					strBuilder.append(varName[i]);
 					strBuilder.append('\t');
-				}
-				else {
+				} else {
 					strBuilder.append("\t");
 				}
 			}
@@ -363,11 +372,9 @@ public class LinearProgram {
 			String sense;
 			if (senses[c] == Sense.EQ) {
 				sense = "=";
-			}
-			else if (senses[c] == Sense.LEQ) {
+			} else if (senses[c] == Sense.LEQ) {
 				sense = "<=";
-			}
-			else {
+			} else {
 				sense = ">=";
 			}
 			strBuilder.append(sense);
@@ -375,7 +382,7 @@ public class LinearProgram {
 			strBuilder.append(rightHandSide[c]);
 			strBuilder.append('\n');
 		}
-		
+
 		return strBuilder.toString();
 	}
 
